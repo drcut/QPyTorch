@@ -33,13 +33,16 @@ __global__ void float_kernel_nearest(float* __restrict__ a,
     unsigned int exp = (old_num & 0x7F800000)>>23;
     unsigned int man = (old_num & 0x007FFFFF);
     int true_exp = (int)exp - 127;
-    if(exp > 0) { // normal float 
+    if(exp == 0xFF || (exp == 0x00 && man == 0)) { // 0,INF or NAN, just return the same value
+        o[index] = a[index];
+    }
+    else if(exp > 0) { // normal float 
        man = man | (1<<23); 
        const int DIY_bias = (1<<(exp_bits-1)) - 1;
        int new_e = true_exp + DIY_bias;
        if(new_e > 0) { // normal number for DIY precision
           // round man
-          if((man & 1<<(23 - man_bits - 1)) == 0) // just round to lower
+          if(man_bits == 23 || ((man & 1<<(23 - man_bits - 1)) == 0)) // just round to lower
           {
              man = man & ~((1<<(23 - man_bits)) - 1);
           }
@@ -84,12 +87,22 @@ __global__ void float_kernel_nearest(float* __restrict__ a,
           //TODO: add round part
        }
        // TODO: maybe e will be 0xFFF, this will cause bug
-       if(new_e >=0)
-            o[index] = ((float)man)/(1<<23) * (1<<new_e);
-       else
-            o[index] = ((float)man)/(1<<23) / (1<<(-new_e));
-       if(a[index] < 0)
-          o[index] = -o[index];
+       if(new_e >=0) {
+            float mid =float(man)/(1<<23);
+            for(int t = 0;t<new_e;t++)
+                mid*=2.0;
+            o[index] = mid;
+       }
+       else {
+            float mid = (float)man/(1<<23);
+            for(int t =0;t<-new_e;t++)
+                mid/=2.0;
+            o[index] = mid;
+       }
+       if((old_num&(1<<31)) != 0)
+       {
+            o[index] = -o[index];
+       }
     }
   }
 }
